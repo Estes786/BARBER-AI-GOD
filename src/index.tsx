@@ -295,40 +295,166 @@ Pengetahuan Dasar:
   }
 })
 
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Determine face shape from ResNet-50 analysis
+ * Maps ResNet labels to common face shape categories
+ */
+function determineFaceShape(visionResponse: any): string {
+  // ResNet returns array of labels with scores
+  const labels = visionResponse || []
+  
+  // Convert to lowercase string for easier matching
+  const labelsStr = JSON.stringify(labels).toLowerCase()
+  
+  // Face shape mapping (prioritized order)
+  const shapePatterns = [
+    { keywords: ['oval', 'ellipse'], shape: 'oval' },
+    { keywords: ['round', 'circle', 'bulat'], shape: 'bulat' },
+    { keywords: ['square', 'kotak', 'box'], shape: 'kotak' },
+    { keywords: ['heart', 'hati'], shape: 'heart' },
+    { keywords: ['oblong', 'rectangle', 'lonjong', 'panjang'], shape: 'lonjong' },
+    { keywords: ['diamond', 'berlian'], shape: 'diamond' },
+    { keywords: ['triangle', 'segitiga'], shape: 'triangle' }
+  ]
+  
+  // Find first matching pattern
+  for (const pattern of shapePatterns) {
+    for (const keyword of pattern.keywords) {
+      if (labelsStr.includes(keyword)) {
+        return pattern.shape
+      }
+    }
+  }
+  
+  // Default fallback: analyze facial features if available
+  if (labelsStr.includes('face') || labelsStr.includes('person') || labelsStr.includes('portrait')) {
+    return 'oval' // Most common/versatile default
+  }
+  
+  return 'unknown'
+}
+
 // 4. API: Upload Foto (THE EYES - ResNet)
-// NOTE: Memerlukan R2 bucket aktif
+// NOTE: R2 Storage is OPTIONAL - will work with or without R2
 app.post('/api/upload-foto', async (c) => {
-  if (!c.env.R2) {
+  // Check if D1 Database is configured
+  if (!c.env.DB) {
     return c.json({
-      error: 'R2 Storage belum dikonfigurasi, Gyss!',
-      hint: 'Aktifkan R2 bucket di wrangler.jsonc'
+      error: 'D1 Database tidak tersedia, Gyss!',
+      hint: 'Setup D1 database terlebih dahulu'
     }, 503)
   }
 
   try {
+    // Parse multipart form data
     const body = await c.req.parseBody()
     const file = body['file'] as File
     const userId = body['userId'] as string
 
-    // Simpan ke R2
-    const key = `photos/${userId}-${Date.now()}.jpg`
-    await c.env.R2.put(key, await file.arrayBuffer())
+    // Validate inputs
+    if (!file) {
+      return c.json({
+        error: 'File foto tidak ada, Gyss!',
+        hint: 'Upload file foto dengan field name: file'
+      }, 400)
+    }
 
-    // Analisis Bentuk Wajah pake AI Gratisan (ResNet)
-    const visionResp = await c.env.AI.run('@cf/microsoft/resnet-50', {
-      image: [...new Uint8Array(await file.arrayBuffer())]
+    if (!userId) {
+      return c.json({
+        error: 'User ID tidak ada, Gyss!',
+        hint: 'Kirim userId dalam form data'
+      }, 400)
+    }
+
+    // Check user exists and has credits
+    const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first()
+    
+    if (!user) {
+      return c.json({
+        error: 'User tidak ditemukan, Gyss!',
+        hint: 'Panggil /api/user/:id dulu untuk create user'
+      }, 404)
+    }
+    
+    if (user.credits < 1) {
+      return c.json({
+        error: 'Credit lo habis, Gyss!',
+        hint: 'Balik lagi besok untuk dapetin 5 credit fresh!',
+        credits: 0
+      }, 402)
+    }
+
+    // Convert file to array buffer for AI analysis
+    const imageBuffer = await file.arrayBuffer()
+    const imageArray = [...new Uint8Array(imageBuffer)]
+
+    // Analyze face shape with ResNet-50 (Workers AI - FREE!)
+    const visionResponse = await c.env.AI.run('@cf/microsoft/resnet-50', {
+      image: imageArray
     })
+
+    // Determine face shape from AI analysis
+    const faceShape = determineFaceShape(visionResponse)
+
+    // Optional: Save to R2 if configured
+    let photoKey = null
+    let r2Status = 'not_configured'
+    
+    if (c.env.R2) {
+      try {
+        photoKey = `photos/${userId}-${Date.now()}.jpg`
+        await c.env.R2.put(photoKey, imageBuffer, {
+          httpMetadata: {
+            contentType: file.type || 'image/jpeg'
+          }
+        })
+        r2Status = 'saved'
+      } catch (r2Error: any) {
+        // R2 error is non-fatal - continue without storage
+        console.error('R2 storage error:', r2Error)
+        r2Status = 'error'
+      }
+    }
+
+    // Deduct credit from user
+    await c.env.DB.prepare('UPDATE users SET credits = credits - 1 WHERE id = ?').bind(userId).run()
+    
+    // Save analysis to consultation history
+    await c.env.DB.prepare(
+      'INSERT INTO consultations (user_id, face_shape, prompt, response, credits_used, created_at) VALUES (?, ?, ?, ?, 1, datetime("now"))'
+    ).bind(
+      userId, 
+      faceShape, 
+      'Photo upload - Face analysis',
+      JSON.stringify({ analysis: visionResponse, face_shape: faceShape })
+    ).run()
+    
+    // Get updated credit balance
+    const updatedUser = await c.env.DB.prepare('SELECT credits FROM users WHERE id = ?').bind(userId).first()
 
     return c.json({
-      msg: "Foto udah masuk gudang, Gyss!",
-      analysis: visionResp,
-      photoKey: key,
-      status: 'success'
+      msg: 'Foto berhasil dianalisis, Gyss!',
+      face_shape: faceShape,
+      face_shape_id: faceShape,
+      analysis: visionResponse,
+      photo_key: photoKey,
+      r2_status: r2Status,
+      credits_remaining: updatedUser.credits,
+      credits_used: 1,
+      userId,
+      status: 'success',
+      hint: r2Status === 'not_configured' ? 'Enable R2 Storage di wrangler.jsonc untuk simpan foto permanent' : null
     })
+
   } catch (error: any) {
     return c.json({
       error: 'Upload foto gagal, Gyss!',
-      details: error.message
+      details: error.message,
+      status: 'error'
     }, 500)
   }
 })
