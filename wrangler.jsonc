@@ -17,13 +17,13 @@
   ],
   
   // R2 Storage - untuk photo uploads
-  // NOTE: Uncomment setelah create bucket: npx wrangler r2 bucket create barber-photos
-  // "r2_buckets": [
-  //   {
-  //     "binding": "R2",
-  //     "bucket_name": "barber-photos"
-  //   }
-  // ],
+  // ✅ ACTIVE: Bucket created successfully!
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "barber-photos"
+    }
+  ],
   
   // KV Storage - untuk session management
   // NOTE: Uncomment setelah create KV: npx wrangler kv:namespace create barber_sessions

@@ -70,6 +70,47 @@ app.get('/', (c) => {
                 </div>
             </div>
 
+            <!-- Photo Upload Section -->
+            <div class="bg-gray-800/50 backdrop-blur-lg rounded-xl p-8 border border-gray-700 mb-8">
+                <h2 class="text-3xl font-bold mb-6">
+                    <i class="fas fa-camera mr-2"></i>Upload Foto Wajah
+                </h2>
+                
+                <div class="space-y-4">
+                    <!-- User ID Input -->
+                    <div>
+                        <label class="block text-sm font-medium mb-2">User ID</label>
+                        <input type="text" id="uploadUserId" value="user-demo-123" 
+                               class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white">
+                    </div>
+                    
+                    <!-- File Input with Preview -->
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Pilih Foto Wajah</label>
+                        <input type="file" id="photoFile" accept="image/*" 
+                               onchange="previewPhoto()"
+                               class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white">
+                    </div>
+                    
+                    <!-- Photo Preview -->
+                    <div id="photoPreview" class="hidden">
+                        <label class="block text-sm font-medium mb-2">Preview:</label>
+                        <img id="previewImage" class="w-full max-w-md mx-auto rounded-lg border border-gray-700">
+                    </div>
+                    
+                    <!-- Upload Button -->
+                    <button onclick="uploadFoto()" 
+                            class="w-full bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-lg transition-all">
+                        <i class="fas fa-upload mr-2"></i>Analisis Wajah Sekarang
+                    </button>
+                    
+                    <!-- Result Display -->
+                    <div id="uploadResult" class="bg-gray-900 border border-gray-700 rounded-lg p-4 min-h-[100px] hidden">
+                        <div id="uploadResultContent"></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Demo Console -->
             <div class="bg-gray-800/50 backdrop-blur-lg rounded-xl p-8 border border-gray-700">
                 <h2 class="text-3xl font-bold mb-6"><i class="fas fa-terminal mr-2"></i>Live Demo Console</h2>
@@ -126,6 +167,87 @@ app.get('/', (c) => {
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script>
+            // Photo Preview Function
+            function previewPhoto() {
+                const fileInput = document.getElementById('photoFile');
+                const preview = document.getElementById('photoPreview');
+                const previewImage = document.getElementById('previewImage');
+                
+                if (fileInput.files && fileInput.files[0]) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        previewImage.src = e.target.result;
+                        preview.classList.remove('hidden');
+                    };
+                    reader.readAsDataURL(fileInput.files[0]);
+                }
+            }
+
+            // Photo Upload Function
+            async function uploadFoto() {
+                const userId = document.getElementById('uploadUserId').value;
+                const fileInput = document.getElementById('photoFile');
+                const file = fileInput.files[0];
+                const resultDiv = document.getElementById('uploadResult');
+                const resultContent = document.getElementById('uploadResultContent');
+                
+                if (!file) {
+                    alert('Pilih foto dulu, Gyss!');
+                    return;
+                }
+                
+                resultContent.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Sedang menganalisis wajah dengan ResNet AI...';
+                resultDiv.classList.remove('hidden');
+                
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('userId', userId);
+                    
+                    const response = await fetch('/api/upload-foto', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        resultContent.innerHTML = 
+                            '<div class="text-red-400">' +
+                            '<i class="fas fa-exclamation-triangle mr-2"></i>' + data.error +
+                            '</div>' +
+                            (data.hint ? '<div class="text-yellow-400 text-sm mt-2">' + data.hint + '</div>' : '');
+                    } else {
+                        resultContent.innerHTML = 
+                            '<div class="space-y-3">' +
+                            '<div class="text-green-400"><i class="fas fa-check-circle mr-2"></i>' + data.msg + '</div>' +
+                            '<div class="bg-gray-800 p-4 rounded space-y-2">' +
+                            '<div class="flex items-center justify-between">' +
+                            '<span class="text-gray-400">Bentuk Wajah:</span>' +
+                            '<span class="text-purple-400 font-bold text-xl">' + data.face_shape.toUpperCase() + '</span>' +
+                            '</div>' +
+                            '<div class="flex items-center justify-between">' +
+                            '<span class="text-gray-400">Sisa Credit:</span>' +
+                            '<span class="text-yellow-400 font-bold">' + data.credits_remaining + ' credits</span>' +
+                            '</div>' +
+                            '<div class="flex items-center justify-between">' +
+                            '<span class="text-gray-400">R2 Storage:</span>' +
+                            '<span class="text-' + (data.r2_status === 'saved' ? 'green' : 'yellow') + '-400">' + 
+                            (data.r2_status === 'saved' ? '✅ Saved' : '⚠️ ' + data.r2_status) + '</span>' +
+                            '</div>' +
+                            '</div>' +
+                            (data.hint ? '<div class="text-yellow-400 text-sm"><i class="fas fa-info-circle mr-2"></i>' + data.hint + '</div>' : '') +
+                            '</div>';
+                    }
+                } catch (error) {
+                    resultContent.innerHTML = 
+                        '<div class="text-red-400">' +
+                        '<i class="fas fa-times-circle mr-2"></i>Error: ' + error.message +
+                        '</div>';
+                }
+            }
+
+            // Konsultasi Function
             async function konsultasi() {
                 const userId = document.getElementById('userId').value;
                 const faceShape = document.getElementById('faceShape').value;
