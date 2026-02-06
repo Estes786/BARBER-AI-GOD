@@ -111,6 +111,76 @@ app.get('/', (c) => {
                 </div>
             </div>
 
+            <!-- Dashboard Section (NEW!) -->
+            <div class="bg-gray-800/50 backdrop-blur-lg rounded-xl p-8 border border-gray-700 mb-8">
+                <h2 class="text-3xl font-bold mb-6">
+                    <i class="fas fa-chart-line mr-2"></i>Dashboard Konsultasi
+                </h2>
+                
+                <div class="space-y-4">
+                    <!-- User ID Input -->
+                    <div>
+                        <label class="block text-sm font-medium mb-2">User ID</label>
+                        <input type="text" id="dashboardUserId" value="user-demo-123" 
+                               class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white">
+                    </div>
+                    
+                    <!-- Load Dashboard Button -->
+                    <button onclick="loadDashboard()" 
+                            class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-lg transition-all">
+                        <i class="fas fa-sync mr-2"></i>Load Dashboard
+                    </button>
+                    
+                    <!-- Dashboard Content -->
+                    <div id="dashboardContent" class="hidden space-y-6">
+                        <!-- Statistics Cards -->
+                        <div class="grid md:grid-cols-3 gap-4">
+                            <div class="bg-gray-900 p-4 rounded-lg border border-purple-500/30">
+                                <div class="text-sm text-gray-400 mb-1">Total Konsultasi</div>
+                                <div id="totalConsultations" class="text-3xl font-bold text-purple-400">0</div>
+                            </div>
+                            <div class="bg-gray-900 p-4 rounded-lg border border-yellow-500/30">
+                                <div class="text-sm text-gray-400 mb-1">Credit Tersisa</div>
+                                <div id="creditsRemaining" class="text-3xl font-bold text-yellow-400">0</div>
+                            </div>
+                            <div class="bg-gray-900 p-4 rounded-lg border border-green-500/30">
+                                <div class="text-sm text-gray-400 mb-1">Bentuk Wajah Utama</div>
+                                <div id="mainFaceShape" class="text-3xl font-bold text-green-400">-</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Chart: Face Shape Distribution -->
+                        <div class="bg-gray-900 p-6 rounded-lg border border-gray-700">
+                            <h3 class="text-xl font-bold mb-4"><i class="fas fa-chart-pie mr-2"></i>Distribusi Bentuk Wajah</h3>
+                            <canvas id="faceShapeChart" width="400" height="200"></canvas>
+                        </div>
+                        
+                        <!-- Consultation History Table -->
+                        <div class="bg-gray-900 p-6 rounded-lg border border-gray-700">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-xl font-bold"><i class="fas fa-history mr-2"></i>Riwayat Konsultasi</h3>
+                                <div class="space-x-2">
+                                    <button onclick="exportHistory('json')" 
+                                            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition-all">
+                                        <i class="fas fa-download mr-2"></i>Export JSON
+                                    </button>
+                                    <button onclick="exportHistory('csv')" 
+                                            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition-all">
+                                        <i class="fas fa-file-csv mr-2"></i>Export CSV
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="historyTable" class="overflow-x-auto">
+                                <!-- Table will be populated by JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Dashboard Loading/Error -->
+                    <div id="dashboardStatus" class="hidden bg-gray-900 border border-gray-700 rounded-lg p-4"></div>
+                </div>
+            </div>
+
             <!-- Demo Console -->
             <div class="bg-gray-800/50 backdrop-blur-lg rounded-xl p-8 border border-gray-700">
                 <h2 class="text-3xl font-bold mb-6"><i class="fas fa-terminal mr-2"></i>Live Demo Console</h2>
@@ -166,7 +236,209 @@ app.get('/', (c) => {
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <script>
+            // Global variables for dashboard
+            let faceShapeChartInstance = null;
+            let currentDashboardData = null;
+
+            // Load Dashboard Function
+            async function loadDashboard() {
+                const userId = document.getElementById('dashboardUserId').value;
+                const statusDiv = document.getElementById('dashboardStatus');
+                const contentDiv = document.getElementById('dashboardContent');
+                
+                statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Loading dashboard...';
+                statusDiv.classList.remove('hidden');
+                contentDiv.classList.add('hidden');
+                
+                try {
+                    const response = await fetch('/api/dashboard/' + userId);
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        statusDiv.innerHTML = '<div class="text-red-400"><i class="fas fa-exclamation-triangle mr-2"></i>' + data.error + '</div>';
+                        return;
+                    }
+                    
+                    // Store data globally
+                    currentDashboardData = data;
+                    
+                    // Update statistics cards
+                    document.getElementById('totalConsultations').textContent = data.total_consultations;
+                    document.getElementById('creditsRemaining').textContent = data.credits_remaining;
+                    document.getElementById('mainFaceShape').textContent = data.main_face_shape.toUpperCase();
+                    
+                    // Update chart
+                    updateFaceShapeChart(data.face_shape_distribution);
+                    
+                    // Update history table
+                    updateHistoryTable(data.consultations);
+                    
+                    // Show dashboard
+                    statusDiv.classList.add('hidden');
+                    contentDiv.classList.remove('hidden');
+                    
+                } catch (error) {
+                    statusDiv.innerHTML = '<div class="text-red-400"><i class="fas fa-times-circle mr-2"></i>Error: ' + error.message + '</div>';
+                }
+            }
+
+            // Update Face Shape Chart
+            function updateFaceShapeChart(distribution) {
+                const ctx = document.getElementById('faceShapeChart').getContext('2d');
+                
+                // Destroy existing chart if any
+                if (faceShapeChartInstance) {
+                    faceShapeChartInstance.destroy();
+                }
+                
+                const labels = Object.keys(distribution);
+                const values = Object.values(distribution);
+                
+                faceShapeChartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels.map(l => l.toUpperCase()),
+                        datasets: [{
+                            data: values,
+                            backgroundColor: [
+                                'rgba(168, 85, 247, 0.8)',  // purple
+                                'rgba(236, 72, 153, 0.8)',  // pink
+                                'rgba(99, 102, 241, 0.8)',  // indigo
+                                'rgba(34, 197, 94, 0.8)',   // green
+                                'rgba(251, 191, 36, 0.8)',  // yellow
+                                'rgba(239, 68, 68, 0.8)',   // red
+                                'rgba(59, 130, 246, 0.8)'   // blue
+                            ],
+                            borderColor: 'rgba(0, 0, 0, 0.8)',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    color: 'rgba(255, 255, 255, 0.8)',
+                                    font: {
+                                        size: 12
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Update History Table
+            function updateHistoryTable(consultations) {
+                const tableDiv = document.getElementById('historyTable');
+                
+                if (consultations.length === 0) {
+                    tableDiv.innerHTML = '<div class="text-gray-400 text-center py-8">Belum ada riwayat konsultasi</div>';
+                    return;
+                }
+                
+                let tableHTML = '<table class="w-full text-sm text-left">' +
+                    '<thead class="text-xs uppercase bg-gray-800">' +
+                    '<tr>' +
+                    '<th class="px-4 py-3">#</th>' +
+                    '<th class="px-4 py-3">Bentuk Wajah</th>' +
+                    '<th class="px-4 py-3">Pertanyaan</th>' +
+                    '<th class="px-4 py-3">Tanggal</th>' +
+                    '<th class="px-4 py-3">Credit</th>' +
+                    '</tr>' +
+                    '</thead>' +
+                    '<tbody>';
+                
+                consultations.slice(0, 10).forEach((item, index) => {
+                    const date = new Date(item.created_at).toLocaleDateString('id-ID');
+                    const time = new Date(item.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                    
+                    tableHTML += '<tr class="border-b border-gray-700 hover:bg-gray-800">' +
+                        '<td class="px-4 py-3">' + (index + 1) + '</td>' +
+                        '<td class="px-4 py-3">' +
+                        '<span class="bg-purple-600/20 border border-purple-600 px-2 py-1 rounded text-purple-400">' +
+                        item.face_shape.toUpperCase() +
+                        '</span>' +
+                        '</td>' +
+                        '<td class="px-4 py-3 max-w-xs truncate">' + item.prompt + '</td>' +
+                        '<td class="px-4 py-3">' +
+                        '<div class="text-xs">' + date + '</div>' +
+                        '<div class="text-xs text-gray-400">' + time + '</div>' +
+                        '</td>' +
+                        '<td class="px-4 py-3 text-yellow-400">' + item.credits_used + '</td>' +
+                        '</tr>';
+                });
+                
+                tableHTML += '</tbody></table>';
+                
+                if (consultations.length > 10) {
+                    tableHTML += '<div class="text-gray-400 text-center py-4 text-sm">Menampilkan 10 dari ' + consultations.length + ' konsultasi</div>';
+                }
+                
+                tableDiv.innerHTML = tableHTML;
+            }
+
+            // Export History Function
+            function exportHistory(format) {
+                if (!currentDashboardData || !currentDashboardData.consultations) {
+                    alert('Load dashboard dulu, Gyss!');
+                    return;
+                }
+                
+                const consultations = currentDashboardData.consultations;
+                const userId = document.getElementById('dashboardUserId').value;
+                const timestamp = new Date().toISOString().split('T')[0];
+                
+                if (format === 'json') {
+                    // Export as JSON
+                    const jsonData = JSON.stringify({
+                        user_id: userId,
+                        exported_at: new Date().toISOString(),
+                        total_consultations: consultations.length,
+                        consultations: consultations
+                    }, null, 2);
+                    
+                    downloadFile(jsonData, 'barber-ai-god-' + userId + '-' + timestamp + '.json', 'application/json');
+                    
+                } else if (format === 'csv') {
+                    // Export as CSV
+                    let csvData = 'ID,Face Shape,Prompt,Response,Credits Used,Created At\n';
+                    
+                    consultations.forEach(item => {
+                        const row = [
+                            item.id,
+                            item.face_shape,
+                            '"' + item.prompt.replace(/"/g, '""') + '"',
+                            '"' + item.response.substring(0, 100).replace(/"/g, '""') + '..."',
+                            item.credits_used,
+                            item.created_at
+                        ];
+                        csvData += row.join(',') + '\n';
+                    });
+                    
+                    downloadFile(csvData, 'barber-ai-god-' + userId + '-' + timestamp + '.csv', 'text/csv');
+                }
+            }
+
+            // Helper: Download File
+            function downloadFile(content, filename, mimeType) {
+                const blob = new Blob([content], { type: mimeType });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+
+
             // Photo Preview Function
             function previewPhoto() {
                 const fileInput = document.getElementById('photoFile');
@@ -581,12 +853,73 @@ app.post('/api/upload-foto', async (c) => {
   }
 })
 
-// 5. Health Check
+// 5. API: Dashboard dengan Consultation History
+app.get('/api/dashboard/:userId', async (c) => {
+  const userId = c.req.param('userId')
+  
+  // Check if D1 Database is configured
+  if (!c.env.DB) {
+    return c.json({
+      error: 'D1 Database tidak tersedia, Gyss!',
+      hint: 'Setup D1 database terlebih dahulu'
+    }, 503)
+  }
+  
+  try {
+    // Get user info
+    const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first()
+    
+    if (!user) {
+      return c.json({
+        error: 'User tidak ditemukan, Gyss!',
+        hint: 'Panggil /api/user/:id dulu untuk create user'
+      }, 404)
+    }
+    
+    // Get consultation history
+    const consultations = await c.env.DB.prepare(
+      'SELECT * FROM consultations WHERE user_id = ? ORDER BY created_at DESC'
+    ).bind(userId).all()
+    
+    // Calculate face shape distribution
+    const faceShapeDistribution: Record<string, number> = {}
+    let mainFaceShape = 'unknown'
+    let maxCount = 0
+    
+    consultations.results.forEach((item: any) => {
+      const shape = item.face_shape || 'unknown'
+      faceShapeDistribution[shape] = (faceShapeDistribution[shape] || 0) + 1
+      
+      if (faceShapeDistribution[shape] > maxCount) {
+        maxCount = faceShapeDistribution[shape]
+        mainFaceShape = shape
+      }
+    })
+    
+    return c.json({
+      user_id: userId,
+      credits_remaining: user.credits,
+      total_consultations: consultations.results.length,
+      main_face_shape: mainFaceShape,
+      face_shape_distribution: faceShapeDistribution,
+      consultations: consultations.results,
+      status: 'success'
+    })
+    
+  } catch (error: any) {
+    return c.json({
+      error: 'Gagal load dashboard, Gyss!',
+      details: error.message
+    }, 500)
+  }
+})
+
+// 6. Health Check
 app.get('/api/health', (c) => {
   return c.json({
     status: 'alive',
     service: 'BARBER-AI-GOD',
-    version: '1.0.0',
+    version: '2.0.0',
     services: {
       'Workers AI': c.env.AI ? '✅ Active' : '❌ Not configured',
       'D1 Database': c.env.DB ? '✅ Active' : '⚠️  Not configured (using mock data)',
