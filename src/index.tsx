@@ -167,39 +167,81 @@ app.get('/', (c) => {
 app.get('/api/user/:id', async (c) => {
   const userId = c.req.param('id')
   
-  // Fase 1: Tanpa database, return mock data
-  // TODO: Implement with D1 database
+  // Check if D1 Database is configured
   if (!c.env.DB) {
     return c.json({
-      userId,
-      credits: 5,
-      status: 'mock_data',
-      message: 'D1 Database belum dikonfigurasi. Ini mock data untuk testing.'
-    })
+      error: 'D1 Database tidak tersedia, Gyss!',
+      hint: 'Setup D1 database terlebih dahulu'
+    }, 503)
   }
   
-  // Fase 2: Dengan D1 Database
+  // Get user from database
   const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first()
   
   if (!user) {
     // User baru, kasih bonus 5 credit gratis!
-    await c.env.DB.prepare('INSERT INTO users (id, credits) VALUES (?, 5)').bind(userId).run()
+    await c.env.DB.prepare('INSERT INTO users (id, credits, last_reset, created_at) VALUES (?, 5, datetime("now"), datetime("now"))').bind(userId).run()
     return c.json({ 
       msg: "Welcome Gyss! Lo dapet 5 credit gratis.", 
       credits: 5,
-      userId 
+      userId,
+      status: 'new_user'
     })
   }
   
-  return c.json(user)
+  // Check if daily reset needed (24 hours)
+  const lastReset = user.last_reset ? new Date(user.last_reset) : new Date(0)
+  const now = new Date()
+  const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60)
+  
+  if (hoursSinceReset >= 24) {
+    // Reset credits to 5
+    await c.env.DB.prepare('UPDATE users SET credits = 5, last_reset = datetime("now") WHERE id = ?').bind(userId).run()
+    return c.json({
+      msg: "Credit lo udah di-reset, Gyss! Dapet 5 credit fresh lagi!",
+      credits: 5,
+      userId,
+      status: 'reset'
+    })
+  }
+  
+  return c.json({
+    userId: user.id,
+    credits: user.credits,
+    last_reset: user.last_reset,
+    status: 'active'
+  })
 })
 
 // 3. API: Konsultasi Rambut (THE BRAIN - Llama 3)
 app.post('/api/konsultasi', async (c) => {
   const { userId, prompt, faceShape } = await c.req.json()
 
-  // Fase 1: Tanpa credit check (untuk testing)
-  // TODO: Implement credit check dengan D1
+  // Check if D1 Database is configured
+  if (!c.env.DB) {
+    return c.json({
+      error: 'D1 Database tidak tersedia, Gyss!',
+      hint: 'Setup D1 database terlebih dahulu'
+    }, 503)
+  }
+  
+  // Check user credit
+  const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first()
+  
+  if (!user) {
+    return c.json({
+      error: 'User tidak ditemukan, Gyss!',
+      hint: 'Panggil /api/user/:id dulu untuk create user'
+    }, 404)
+  }
+  
+  if (user.credits < 1) {
+    return c.json({
+      error: 'Credit lo habis, Gyss!',
+      hint: 'Balik lagi besok untuk dapetin 5 credit fresh!',
+      credits: 0
+    }, 402)
+  }
   
   // PROSES AI (LLAMA 3) - Workers AI FREE TIER!
   const systemPrompt = `
@@ -230,13 +272,18 @@ Pengetahuan Dasar:
       max_tokens: 500
     })
 
-    // Fase 1: Tanpa update credit (untuk testing)
-    // TODO: Implement dengan D1
-    // await c.env.DB.prepare('UPDATE users SET credits = credits - 1 WHERE id = ?').bind(userId).run()
+    // Deduct credit & save consultation to history
+    await c.env.DB.prepare('UPDATE users SET credits = credits - 1 WHERE id = ?').bind(userId).run()
+    
+    await c.env.DB.prepare(
+      'INSERT INTO consultations (user_id, face_shape, prompt, response, credits_used, created_at) VALUES (?, ?, ?, ?, 1, datetime("now"))'
+    ).bind(userId, faceShape, prompt, response.response).run()
+    
+    const updatedUser = await c.env.DB.prepare('SELECT credits FROM users WHERE id = ?').bind(userId).first()
 
     return c.json({
       saran_gani: response.response,
-      sisa_credit: 4, // Mock data
+      sisa_credit: updatedUser.credits,
       userId,
       status: 'success'
     })

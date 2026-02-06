@@ -8,14 +8,13 @@
   ],
   
   // D1 Database - untuk credit system & user data
-  // NOTE: Uncomment setelah create database: npx wrangler d1 create barber-ai-production
-  // "d1_databases": [
-  //   {
-  //     "binding": "DB",
-  //     "database_name": "barber-ai-production",
-  //     "database_id": "YOUR_DATABASE_ID_HERE"
-  //   }
-  // ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "barber-ai-production",
+      "database_id": "a4b6b9ad-724e-42b2-b537-29072fc7d8e8"
+    }
+  ],
   
   // R2 Storage - untuk photo uploads
   // NOTE: Uncomment setelah create bucket: npx wrangler r2 bucket create barber-photos

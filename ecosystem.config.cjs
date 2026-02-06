@@ -6,10 +6,11 @@ module.exports = {
     {
       name: 'barber-ai-god',
       script: 'npx',
-      args: 'wrangler pages dev dist --ip 0.0.0.0 --port 3000',
+      args: 'wrangler pages dev dist --d1=barber-ai-production --local --ip 0.0.0.0 --port 3000',
       env: {
         NODE_ENV: 'development',
-        PORT: 3000
+        PORT: 3000,
+        CLOUDFLARE_API_TOKEN: 'uumF6E8IRrLhgzM7yQlG-Np5FxNMIH6_rv0peDBQ'
       },
       watch: false,
       instances: 1,
