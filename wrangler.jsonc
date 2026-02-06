@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "barber-ai-god",
+  "compatibility_date": "2026-02-06",
+  "pages_build_output_dir": "./dist",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  
+  // D1 Database - untuk credit system & user data
+  // NOTE: Uncomment setelah create database: npx wrangler d1 create barber-ai-production
+  // "d1_databases": [
+  //   {
+  //     "binding": "DB",
+  //     "database_name": "barber-ai-production",
+  //     "database_id": "YOUR_DATABASE_ID_HERE"
+  //   }
+  // ],
+  
+  // R2 Storage - untuk photo uploads
+  // NOTE: Uncomment setelah create bucket: npx wrangler r2 bucket create barber-photos
+  // "r2_buckets": [
+  //   {
+  //     "binding": "R2",
+  //     "bucket_name": "barber-photos"
+  //   }
+  // ],
+  
+  // KV Storage - untuk session management
+  // NOTE: Uncomment setelah create KV: npx wrangler kv:namespace create barber_sessions
+  // "kv_namespaces": [
+  //   {
+  //     "binding": "KV",
+  //     "id": "YOUR_KV_ID_HERE"
+  //   }
+  // ],
+  
+  // Workers AI - FREE TIER! No setup needed
+  "ai": {
+    "binding": "AI"
+  }
+}
